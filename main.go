@@ -1,14 +1,15 @@
 package main
 
 import (
-	"os"
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -18,16 +19,16 @@ import (
 	"google.golang.org/api/option"
 )
 
+const (
+	default_bind = "0.0.0.0:8080"
+)
+
 var (
-	app_bind     = flag.String("b", "", "Bind address, Accept value from env var BIND in format 127.0.0.3:8080")
+	bind         = flag.String("b", "", fmt.Sprintf("Bind address, Accept value from env var BIND in format %s", default_bind))
 	buckets      = flag.String("B", "", "Comma-separated list of allowed buckets, Accept value from env var BUCKETS")
 	verbose      = flag.Bool("v", false, "Show access log")
 	credentials  = flag.String("c", "", "The path to the keyfile. If not present, client will use your default application credentials.")
 	defaultIndex = flag.String("i", "", "The default index file to serve.")
-)
-
-const (
-	default_bind = "0.0.0.0:8080"
 )
 
 var client *storage.Client
@@ -135,7 +136,7 @@ func proxy(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 
 	// the allowed buckets is passed in environment variable in format BUCKETS=name,name,name
-	
+
 	// check if the bucket is allowed
 	allowed := false
 	for _, b := range allowed_buckets {
@@ -188,33 +189,36 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "OK\n")
 }
 
-func initAllowedBuckets(buckets string){
-	if buckets == "" {
-		buckets = os.Getenv("BUCKETS")
+func initAllowedBuckets() {
+	b := *buckets
+	if b == "" {
+		b = os.Getenv("BUCKETS")
 	}
-	if buckets == "" {
+	if b == "" {
 		log.Fatal("BUCKETS environment variable is not set")
 	}
-	allowed_buckets = strings.Split(buckets, ",")
+	allowed_buckets = strings.Split(b, ",")
+	log.Printf("Allowed buckets %+v", allowed_buckets)
 }
 
-func initBind(bind string){
-	if bind == "" {
-		bind = os.Getenv("BIND")
+func initBind() {
+	b := *bind
+	if b == "" {
+		b = os.Getenv("BIND")
 	}
-	if bind == "" {
+	if b == "" {
 		log.Printf("bind address is not passed. using default %s", default_bind)
-		bind = default_bind
+		b = default_bind
 	}
-	*app_bind = bind
+	*bind = b
 }
 
 func main() {
 	flag.Parse()
 
 	// buckets can be passed as parameter or as environment variable
-	initAllowedBuckets(*buckets)
-	initBind(*app_bind)
+	initAllowedBuckets()
+	initBind()
 
 	var err error
 	if *credentials != "" {
@@ -230,8 +234,8 @@ func main() {
 	r.HandleFunc("/_health", wrapper(healthCheck)).Methods("GET", "HEAD")
 	r.HandleFunc("/{bucket:[0-9a-zA-Z-_.]+}/{object:.*}", wrapper(proxy)).Methods("GET", "HEAD")
 
-	log.Printf("[service] listening on %s", *app_bind)
-	if err := http.ListenAndServe(*app_bind, r); err != nil {
+	log.Printf("[service] listening on %s", *bind)
+	if err := http.ListenAndServe(*bind, r); err != nil {
 		log.Fatal(err)
 	}
 }
