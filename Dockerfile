@@ -12,4 +12,4 @@ RUN apt-get update \
 FROM gcr.io/distroless/base
 COPY --from=build /tmp/gcsproxy /gcsproxy
 ENTRYPOINT ["/gcsproxy"]
-CMD [ "-b", "0.0.0.0:80" ]
+
