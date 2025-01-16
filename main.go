@@ -29,6 +29,7 @@ var (
 	verbose      = flag.Bool("v", false, "Show access log")
 	credentials  = flag.String("c", "", "The path to the keyfile. If not present, client will use your default application credentials.")
 	defaultIndex = flag.String("i", "", "The default index file to serve.")
+	defaultRoot  = flag.String("r", "", "The default root file to serve. like /bucket/index.html. taken from env var INDEX_FILE")
 )
 
 var client *storage.Client
@@ -132,6 +133,15 @@ func fetchObjectAttrs(ctx context.Context, bucket, object string) (*storage.Obje
 	return attrs, nil
 }
 
+func root(w http.ResponseWriter, r *http.Request) {
+	// redirect to the default Root file
+	if *defaultRoot != "" {
+		http.Redirect(w, r, *defaultRoot, http.StatusMovedPermanently)
+		return
+	}
+	http.Error(w, "¯\\_(ツ)_/¯", http.StatusNotFound)
+}
+
 func proxy(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 
@@ -213,12 +223,21 @@ func initBind() {
 	*bind = b
 }
 
+func initDefaultRoot() {
+	r := *defaultRoot
+	if r == "" {
+		r = os.Getenv("INDEX_FILE")
+	}
+	*defaultRoot = r
+}
+
 func main() {
 	flag.Parse()
 
 	// buckets can be passed as parameter or as environment variable
 	initAllowedBuckets()
 	initBind()
+	initDefaultRoot()
 
 	var err error
 	if *credentials != "" {
@@ -233,6 +252,7 @@ func main() {
 	r := mux.NewRouter()
 	r.HandleFunc("/_health", wrapper(healthCheck)).Methods("GET", "HEAD")
 	r.HandleFunc("/{bucket:[0-9a-zA-Z-_.]+}/{object:.*}", wrapper(proxy)).Methods("GET", "HEAD")
+	r.HandleFunc("/", wrapper(root)).Methods("GET", "HEAD")
 
 	log.Printf("[service] listening on %s", *bind)
 	if err := http.ListenAndServe(*bind, r); err != nil {
