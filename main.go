@@ -7,7 +7,6 @@ import (
 	"flag"
 	"io"
 	"log"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -20,8 +19,7 @@ import (
 )
 
 var (
-	bind_host         = flag.String("h", "127.0.0.1", "host")
-	bind_port  = flag.String("p", "", "port, Accept value from env var PORT")
+	app_bind     = flag.String("b", "", "Bind address, Accept value from env var BIND in format 127.0.0.3:8080")
 	buckets      = flag.String("B", "", "Comma-separated list of allowed buckets, Accept value from env var BUCKETS")
 	verbose      = flag.Bool("v", false, "Show access log")
 	credentials  = flag.String("c", "", "The path to the keyfile. If not present, client will use your default application credentials.")
@@ -29,7 +27,7 @@ var (
 )
 
 const (
-	default_port = "8080"
+	default_bind = "0.0.0.0:8080"
 )
 
 var client *storage.Client
@@ -200,15 +198,15 @@ func initAllowedBuckets(buckets string){
 	allowed_buckets = strings.Split(buckets, ",")
 }
 
-func initPort(port string){
-	if port == "" {
-		port = os.Getenv("PORT")
+func initBind(bind string){
+	if bind == "" {
+		bind = os.Getenv("BIND")
 	}
-	if port == "" {
-		log.Printf("port not passed. using default %s", default_port)
-		port = default_port
+	if bind == "" {
+		log.Printf("bind address is not passed. using default %s", default_bind)
+		bind = default_bind
 	}
-	*bind_port = port
+	*app_bind = bind
 }
 
 func main() {
@@ -216,7 +214,7 @@ func main() {
 
 	// buckets can be passed as parameter or as environment variable
 	initAllowedBuckets(*buckets)
-	initPort(*bind_port)
+	initBind(*app_bind)
 
 	var err error
 	if *credentials != "" {
@@ -232,9 +230,8 @@ func main() {
 	r.HandleFunc("/_health", wrapper(healthCheck)).Methods("GET", "HEAD")
 	r.HandleFunc("/{bucket:[0-9a-zA-Z-_.]+}/{object:.*}", wrapper(proxy)).Methods("GET", "HEAD")
 
-	bind := fmt.Sprintf("%s:%s", *bind_host, *bind_port)
-	log.Printf("[service] listening on %s", bind)
-	if err := http.ListenAndServe(bind, r); err != nil {
+	log.Printf("[service] listening on %s", *app_bind)
+	if err := http.ListenAndServe(*app_bind, r); err != nil {
 		log.Fatal(err)
 	}
 }
