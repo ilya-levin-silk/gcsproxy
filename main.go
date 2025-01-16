@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"context"
 	"errors"
 	"flag"
@@ -19,12 +20,14 @@ import (
 
 var (
 	bind         = flag.String("b", "127.0.0.1:8080", "Bind address")
+	buckets      = flag.String("B", "", "Comma-separated list of allowed buckets")
 	verbose      = flag.Bool("v", false, "Show access log")
 	credentials  = flag.String("c", "", "The path to the keyfile. If not present, client will use your default application credentials.")
 	defaultIndex = flag.String("i", "", "The default index file to serve.")
 )
 
 var client *storage.Client
+var allowed_buckets []string
 
 func handleError(w http.ResponseWriter, err error) {
 	if errors.Is(err, storage.ErrObjectNotExist) {
@@ -127,6 +130,23 @@ func fetchObjectAttrs(ctx context.Context, bucket, object string) (*storage.Obje
 func proxy(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 
+	// the allowed buckets is passed in environment variable in format BUCKETS=name,name,name
+	
+	// check if the bucket is allowed
+	allowed := false
+	for _, b := range allowed_buckets {
+		if b == params["bucket"] {
+			allowed = true
+			break
+		}
+	}
+
+	if !allowed {
+		// return 404 if the bucket is not allowed
+		http.Error(w, "¯\\_(ツ)_/¯", http.StatusNotFound)
+		return
+	}
+
 	attrs, err := fetchObjectAttrs(r.Context(), params["bucket"], params["object"])
 	if err != nil {
 		handleError(w, err)
@@ -164,8 +184,23 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "OK\n")
 }
 
+func initAllowedBuckets(buckets string) []string {
+	if buckets == "" {
+		buckets = os.Getenv("BUCKETS")
+	}
+	if buckets == "" {
+		log.Fatal("BUCKETS environment variable is not set")
+	}
+
+	allowed_buckets = strings.Split(buckets, ",")
+	return allowed_buckets
+}
+
 func main() {
 	flag.Parse()
+
+	// buckets can be passed as parameter or as environment variable
+	initAllowedBuckets(*buckets)
 
 	var err error
 	if *credentials != "" {
