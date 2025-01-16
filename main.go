@@ -7,6 +7,7 @@ import (
 	"flag"
 	"io"
 	"log"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -19,11 +20,16 @@ import (
 )
 
 var (
-	bind         = flag.String("b", "127.0.0.1:8080", "Bind address")
-	buckets      = flag.String("B", "", "Comma-separated list of allowed buckets")
+	bind_host         = flag.String("h", "127.0.0.1", "host")
+	bind_port  = flag.String("p", "", "port, Accept value from env var PORT")
+	buckets      = flag.String("B", "", "Comma-separated list of allowed buckets, Accept value from env var BUCKETS")
 	verbose      = flag.Bool("v", false, "Show access log")
 	credentials  = flag.String("c", "", "The path to the keyfile. If not present, client will use your default application credentials.")
 	defaultIndex = flag.String("i", "", "The default index file to serve.")
+)
+
+const (
+	default_port = "8080"
 )
 
 var client *storage.Client
@@ -184,16 +190,25 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "OK\n")
 }
 
-func initAllowedBuckets(buckets string) []string {
+func initAllowedBuckets(buckets string){
 	if buckets == "" {
 		buckets = os.Getenv("BUCKETS")
 	}
 	if buckets == "" {
 		log.Fatal("BUCKETS environment variable is not set")
 	}
-
 	allowed_buckets = strings.Split(buckets, ",")
-	return allowed_buckets
+}
+
+func initPort(port string){
+	if port == "" {
+		port = os.Getenv("PORT")
+	}
+	if port == "" {
+		log.Printf("port not passed. using default %s", default_port)
+		port = default_port
+	}
+	*bind_port = port
 }
 
 func main() {
@@ -201,6 +216,7 @@ func main() {
 
 	// buckets can be passed as parameter or as environment variable
 	initAllowedBuckets(*buckets)
+	initPort(*bind_port)
 
 	var err error
 	if *credentials != "" {
@@ -216,8 +232,9 @@ func main() {
 	r.HandleFunc("/_health", wrapper(healthCheck)).Methods("GET", "HEAD")
 	r.HandleFunc("/{bucket:[0-9a-zA-Z-_.]+}/{object:.*}", wrapper(proxy)).Methods("GET", "HEAD")
 
-	log.Printf("[service] listening on %s", *bind)
-	if err := http.ListenAndServe(*bind, r); err != nil {
+	bind := fmt.Sprintf("%s:%s", *bind_host, *bind_port)
+	log.Printf("[service] listening on %s", bind)
+	if err := http.ListenAndServe(bind, r); err != nil {
 		log.Fatal(err)
 	}
 }
